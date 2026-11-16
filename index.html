@@ -39,7 +39,8 @@
     var p = new YT.Player("player", {
       width: "100%", height: "100%",
       videoId: ids[0] || undefined,
-      playerVars: { playsinline: 1, loop: 1, playlist: ids.join(","), rel: 0 },
+      // loop=0 の時は1回だけ流す（船の PV）。それ以外は並びを繰り返す。
+      playerVars: { playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 },
       events: {
         onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); },
         onStateChange: function (e) { var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
