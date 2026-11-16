@@ -34,7 +34,11 @@
     if (!m || m.ctp !== 1 || typeof m.cmd !== "string") return;
     run(m);
   });
-  var ids = (new URLSearchParams(location.search).get("ids") || "").split(",").filter(function (x) { return /^[\w-]{11}$/.test(x); });
+  var q = new URLSearchParams(location.search);
+  // 単独で開いた時（CTP の「♪ メインテーマ」の別の窓）は、題を窓の名前にして、用意ができたら自分で流す
+  var alone = parent === window;
+  if (alone && q.get("title")) document.title = q.get("title");
+  var ids = (q.get("ids") || "").split(",").filter(function (x) { return /^[\w-]{11}$/.test(x); });
   window.onYouTubeIframeAPIReady = function () {
     var p = new YT.Player("player", {
       width: "100%", height: "100%",
@@ -42,7 +46,7 @@
       // loop=0 の時は1回だけ流す（船の PV）。それ以外は並びを繰り返す。
       playerVars: { playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 },
       events: {
-        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); },
+        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone) p.playVideo(); },
         onStateChange: function (e) { var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
         // 埋め込みが許されていない動画などは、知らせてから次へ進む
         onError: function (e) { tell({ ev: "error", info: e.data }); setTimeout(function () { try { p.nextVideo(); } catch (x) {} }, 800); }
