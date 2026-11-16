@@ -19,17 +19,20 @@
 // データは何も集めない・どこにも送らない。
 (function () {
   var player = null, pending = [];
-  function tell(msg) { try { parent.postMessage(Object.assign({ ctp: 1 }, msg), "*"); } catch (e) {} }
+  // 受けるのは、Chrome の拡張機能の頁の中に置かれた時だけ。返す先もその頁だけ。
+  var host = (location.ancestorOrigins && location.ancestorOrigins[0]) || "";
+  var fromExt = /^chrome-extension:\/\/[a-p]{32}$/.test(host);
+  function tell(msg) { if (!fromExt) return; try { parent.postMessage(Object.assign({ ctp: 1 }, msg), host); } catch (e) {} }
   function run(m) {
     if (!player) { pending.push(m); return; }
     if (m.cmd === "play") player.playVideo();
     else if (m.cmd === "pause") player.pauseVideo();
     else if (m.cmd === "next") player.nextVideo();
-    else if (m.cmd === "volume" && typeof m.vol === "number") player.setVolume(Math.max(0, Math.min(100, m.vol)));
-    else if (m.cmd === "list" && Array.isArray(m.ids) && m.ids.length) player.loadPlaylist(m.ids.filter(function (x) { return /^[\w-]{11}$/.test(x); }), 0);
+    else if (m.cmd === "volume" && typeof m.vol === "number" && isFinite(m.vol)) player.setVolume(Math.max(0, Math.min(100, m.vol)));
+    else if (m.cmd === "list" && Array.isArray(m.ids)) { var ok = m.ids.filter(function (x) { return typeof x === "string" && /^[\w-]{11}$/.test(x); }); if (ok.length) player.loadPlaylist(ok, 0); }
   }
   window.addEventListener("message", function (e) {
-    if (e.source !== parent) return;
+    if (e.source !== parent || !fromExt || e.origin !== host) return;
     var m = e.data;
     if (!m || m.ctp !== 1 || typeof m.cmd !== "string") return;
     run(m);
