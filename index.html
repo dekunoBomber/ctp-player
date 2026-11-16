@@ -24,6 +24,7 @@
     if (!player) { pending.push(m); return; }
     if (m.cmd === "play") player.playVideo();
     else if (m.cmd === "pause") player.pauseVideo();
+    else if (m.cmd === "next") player.nextVideo();
     else if (m.cmd === "volume" && typeof m.vol === "number") player.setVolume(Math.max(0, Math.min(100, m.vol)));
     else if (m.cmd === "list" && Array.isArray(m.ids) && m.ids.length) player.loadPlaylist(m.ids.filter(function (x) { return /^[\w-]{11}$/.test(x); }), 0);
   }
@@ -41,8 +42,9 @@
       playerVars: { playsinline: 1, loop: 1, playlist: ids.join(","), rel: 0 },
       events: {
         onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); },
-        onStateChange: function (e) { tell({ ev: "state", info: e.data }); },
-        onError: function (e) { tell({ ev: "error", info: e.data }); }
+        onStateChange: function (e) { var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
+        // 埋め込みが許されていない動画などは、知らせてから次へ進む
+        onError: function (e) { tell({ ev: "error", info: e.data }); setTimeout(function () { try { p.nextVideo(); } catch (x) {} }, 800); }
       }
     });
   };
