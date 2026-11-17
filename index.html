@@ -11,6 +11,8 @@
   /* 背景（bg）：真っ暗から1秒おいてふわっと出す。終わる前にふっと消す（最後のロゴの絵が一瞬出て驚く。司令部 11-17） */
   body.bg #player { opacity: 0; transition: opacity 1.5s ease; }
   body.bg.show #player { opacity: 1; }
+  /* clear=1：後ろの物（CTP の扉の写真）が見えるように、地を透明にする */
+  html.clear, html.clear body { background: transparent; }
 </style>
 </head>
 <body>
@@ -51,6 +53,7 @@
   var start = Math.max(0, Math.min(36000, parseInt(q.get("start"), 10) || 0));
   var showT = null;
   if (bg) document.body.classList.add("bg");
+  if (q.get("clear") === "1") document.documentElement.classList.add("clear");
   function show(on) { document.body.classList.toggle("show", on); }
   // 背景の音（司令部 11-17「BGMサウンドのにしよう」「最初と最後はフェードインフェードアウト」）。
   // 音を出すのは CTP のボタンを押した時だけ。出す時・映像が出る時はふわっと上げ、止める時・終わり際はふわっと下げる
