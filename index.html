@@ -32,6 +32,8 @@
     else if (m.cmd === "pause") player.pauseVideo();
     else if (m.cmd === "next") player.nextVideo();
     else if (m.cmd === "volume" && typeof m.vol === "number" && isFinite(m.vol)) player.setVolume(Math.max(0, Math.min(100, m.vol)));
+    else if (m.cmd === "sound") soundSet(!!m.on, m.vol);
+    else if (m.cmd === "svol") soundSet(snd.on, m.vol);
     else if (m.cmd === "list" && Array.isArray(m.ids)) { var ok = m.ids.filter(function (x) { return typeof x === "string" && /^[\w-]{11}$/.test(x); }); if (ok.length) player.loadPlaylist(ok, 0); }
   }
   window.addEventListener("message", function (e) {
@@ -50,6 +52,30 @@
   var showT = null;
   if (bg) document.body.classList.add("bg");
   function show(on) { document.body.classList.toggle("show", on); }
+  // 背景の音（司令部 11-17「BGMサウンドのにしよう」「最初と最後はフェードインフェードアウト」）。
+  // 音を出すのは CTP のボタンを押した時だけ。出す時・映像が出る時はふわっと上げ、止める時・終わり際はふわっと下げる
+  var snd = { on: false, vol: 50, cur: 0, timer: null };
+  function clampVol(v) { return typeof v === "number" && isFinite(v) ? Math.max(0, Math.min(100, v)) : null; }
+  function fadeTo(target, ms, done) {
+    clearInterval(snd.timer);
+    var from = snd.cur, steps = Math.max(1, Math.round(ms / 50)), i = 0;
+    snd.timer = setInterval(function () {
+      i++; snd.cur = from + (target - from) * i / steps;
+      try { player.setVolume(Math.round(snd.cur)); } catch (x) {}
+      if (i >= steps) { clearInterval(snd.timer); if (done) done(); }
+    }, 50);
+  }
+  function soundUp() { if (!snd.on || !player) return; if (player.isMuted()) { snd.cur = 0; player.setVolume(0); player.unMute(); } fadeTo(snd.vol, 1500); }
+  function soundDown(ms, then) { if (!player) return; fadeTo(0, ms, then); }
+  function soundSet(on, vol) {
+    var v = clampVol(vol); if (v !== null) snd.vol = v;
+    var was = snd.on; snd.on = on;
+    if (!player) return;
+    if (on && document.body.classList.contains("show")) { if (was) { clearInterval(snd.timer); snd.cur = snd.vol; player.setVolume(snd.vol); } else soundUp(); }
+    else if (!on && was) soundDown(800, function () { player.mute(); });
+  }
+  // 手元の写し（localhost）で確かめる時だけ、外から指示を出せるようにする
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ctpRun = function (m) { run(m); };
   if (alone && q.get("title")) document.title = q.get("title");
   var ids = (q.get("ids") || "").split(",").filter(function (x) { return /^[\w-]{11}$/.test(x); });
   window.onYouTubeIframeAPIReady = function () {
@@ -63,13 +89,13 @@
       events: {
         onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); }
           // 背景：終わる 4 秒前から消し始める（最後の絵を見せない）
-          if (bg) setInterval(function () { try { var d = p.getDuration(), t = p.getCurrentTime(); if (d > 0 && d - t < 4) show(false); } catch (x) {} }, 250);
+          if (bg) setInterval(function () { try { var d = p.getDuration(), t = p.getCurrentTime(); if (d > 0 && d - t < 4 && document.body.classList.contains("show")) { show(false); if (snd.on) soundDown(1500); } } catch (x) {} }, 250);
         },
         onStateChange: function (e) {
           if (bg) {
             clearTimeout(showT);
             // 流れ始めて、始める秒より後にいる時だけ、1秒おいて出す。始まる前・終わった時は消す（読み込み中の一時の待ちでは消さない）
-            if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) show(true); } catch (x) {} }, 1000);
+            if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) { show(true); soundUp(); } } catch (x) {} }, 1000);
             else if (e.data === 0 || e.data === -1 || e.data === 5) show(false);
             if (e.data === 0) { p.seekTo(start, true); p.playVideo(); }
           }
