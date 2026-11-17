@@ -115,8 +115,8 @@
     fadeMs(out); show(false);
     if (snd.on) soundDown(out * 1000);
     setTimeout(function () {
+      if (seg) return; // その間に次の区間が来た（前の区間の終わりは知らせない。知らせると CTP が新しい区間の背景まで片付けた。司令部 11-17）
       tell({ ev: "segEnd" });
-      if (seg) return; // その間に次の区間が来た
       fadeMs(1.5);
       try { player.seekTo(start, true); player.playVideo(); } catch (x) {}
       showT = setTimeout(function () { show(true); soundUp(); }, 1000);
