@@ -36,6 +36,8 @@
     else if (m.cmd === "volume" && typeof m.vol === "number" && isFinite(m.vol)) player.setVolume(Math.max(0, Math.min(100, m.vol)));
     else if (m.cmd === "sound") soundSet(!!m.on, m.vol);
     else if (m.cmd === "svol") soundSet(snd.on, m.vol);
+    else if (m.cmd === "seg") segStart(m);
+    else if (m.cmd === "segStop") segEnd(0.6);
     else if (m.cmd === "list" && Array.isArray(m.ids)) { var ok = m.ids.filter(function (x) { return typeof x === "string" && /^[\w-]{11}$/.test(x); }); if (ok.length) player.loadPlaylist(ok, 0); }
   }
   window.addEventListener("message", function (e) {
@@ -82,6 +84,45 @@
     if (on && document.body.classList.contains("show")) { if (!was || player.isMuted()) soundUp(); else { clearInterval(snd.timer); snd.cur = snd.vol; player.setVolume(snd.vol); } }
     else if (!on && was) soundDown(800, function () { player.mute(); });
   }
+  // 区間だけ流す（司令部 11-17「プラン完成の時だけ背景動画を差し替え」）。背景（bg）の時だけ。
+  // seg：{ start, end, fadeIn, fadeOut }（秒）。今の映像をすっと消し、start へ飛んで fadeIn 秒でふわっと出し、
+  // end の fadeOut 秒前から消し始めて end で消えきる。終わったら CTP に segEnd を知らせ、いつもの背景（start から）に戻す。
+  var seg = null;
+  function num(v, lo, hi, d) { return typeof v === "number" && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+  function fadeMs(sec) { document.getElementById("player").style.transitionDuration = sec + "s"; }
+  function segStart(m) {
+    if (!bg || !player) return;
+    var a = num(m.start, 0, 36000, 0), b = num(m.end, 0, 36000, 0);
+    if (!(b > a)) return;
+    seg = { start: a, end: b, inn: num(m.fadeIn, 0, 10, 1.5), out: num(m.fadeOut, 0, 10, 1.5), fading: false };
+    clearTimeout(showT);
+    fadeMs(0.3); show(false);
+    if (snd.on) soundDown(300);
+    setTimeout(function () {
+      if (!seg) return;
+      held = false;
+      player.seekTo(seg.start, true); player.playVideo();
+      fadeMs(seg.inn); show(true);
+      if (snd.on) { if (player.isMuted()) { snd.cur = 0; player.setVolume(0); player.unMute(); } fadeTo(snd.vol, seg.inn * 1000); }
+    }, 350);
+  }
+  // 区間を終える（out 秒で消して、いつもの背景へ）
+  // 終わり際：end まで流しながら消す
+  function segEndAt(out) { segEnd(out); }
+  function segEnd(out) {
+    if (!seg) return;
+    var was = seg; seg = null;
+    fadeMs(out); show(false);
+    if (snd.on) soundDown(out * 1000);
+    setTimeout(function () {
+      tell({ ev: "segEnd" });
+      if (seg) return; // その間に次の区間が来た
+      fadeMs(1.5);
+      try { player.seekTo(start, true); player.playVideo(); } catch (x) {}
+      showT = setTimeout(function () { show(true); soundUp(); }, 1000);
+    }, out * 1000 + 50);
+    return was;
+  }
   // 手元の写し（localhost）で確かめる時だけ、外から指示を出せるようにする
   if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ctpRun = function (m) { run(m); };
   if (alone && q.get("title")) document.title = q.get("title");
@@ -99,13 +140,16 @@
           // 背景：終わる 4 秒前から消し始める（最後の絵を見せない）
           if (bg) { p_ = p; setInterval(function () { try {
             var d = p.getDuration(), t = p.getCurrentTime(), stop = end > start ? Math.min(end, d || end) : d;
+            // 区間を流している間は、区間の終わりだけを見る（いつもの繰り返しはしない）
+            if (seg) { if (!seg.fading && t >= seg.end - seg.out) { seg.fading = true; var o = seg.out; seg.out = 0; segEndAt(o); } return; }
             // 終わる 4 秒前から消し始め（最後の絵を見せない）、end がある時は end で頭へ戻る
             if (stop > 0 && stop - t < 4 && document.body.classList.contains("show")) { show(false); if (snd.on) soundDown(1500); }
             if (end > start && t >= end && !held) cycle();
           } catch (x) {} }, 250); }
         },
         onStateChange: function (e) {
-          if (bg) {
+          if (bg && seg) { if (e.data === 0) segEnd(0.3); }
+          else if (bg) {
             clearTimeout(showT);
             // 流れ始めて、始める秒より後にいる時だけ、1秒おいて出す。始まる前・終わった時は消す（読み込み中の一時の待ちでは消さない）
             if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) { show(true); soundUp(); } } catch (x) {} }, 1000);
