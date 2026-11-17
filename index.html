@@ -8,6 +8,9 @@
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   #player { width: 100%; height: 100%; }
+  /* 背景（bg）：真っ暗から1秒おいてふわっと出す。終わる前にふっと消す（最後のロゴの絵が一瞬出て驚く。司令部 11-17） */
+  body.bg #player { opacity: 0; transition: opacity 1.5s ease; }
+  body.bg.show #player { opacity: 1; }
 </style>
 </head>
 <body>
@@ -44,6 +47,9 @@
   var bg = q.get("bg") === "1";
   // start：流し始める秒。背景では、終わったらこの秒へ戻って繰り返す（頭の字幕を出さない。司令部 11-17）
   var start = Math.max(0, Math.min(36000, parseInt(q.get("start"), 10) || 0));
+  var showT = null;
+  if (bg) document.body.classList.add("bg");
+  function show(on) { document.body.classList.toggle("show", on); }
   if (alone && q.get("title")) document.title = q.get("title");
   var ids = (q.get("ids") || "").split(",").filter(function (x) { return /^[\w-]{11}$/.test(x); });
   window.onYouTubeIframeAPIReady = function () {
@@ -55,8 +61,19 @@
       playerVars: bg ? { playsinline: 1, rel: 0, mute: 1, controls: 0, disablekb: 1, iv_load_policy: 3, loop: 0, start: start }
         : { playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 },
       events: {
-        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); } },
-        onStateChange: function (e) { if (bg && e.data === 0) { p.seekTo(start, true); p.playVideo(); } var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
+        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); }
+          // 背景：終わる 4 秒前から消し始める（最後の絵を見せない）
+          if (bg) setInterval(function () { try { var d = p.getDuration(), t = p.getCurrentTime(); if (d > 0 && d - t < 4) show(false); } catch (x) {} }, 250);
+        },
+        onStateChange: function (e) {
+          if (bg) {
+            clearTimeout(showT);
+            // 流れ始めて、始める秒より後にいる時だけ、1秒おいて出す。始まる前・終わった時は消す（読み込み中の一時の待ちでは消さない）
+            if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) show(true); } catch (x) {} }, 1000);
+            else if (e.data === 0 || e.data === -1 || e.data === 5) show(false);
+            if (e.data === 0) { p.seekTo(start, true); p.playVideo(); }
+          }
+          var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
         // 埋め込みが許されていない動画などは、知らせてから次へ進む
         onError: function (e) { tell({ ev: "error", info: e.data }); setTimeout(function () { try { p.nextVideo(); } catch (x) {} }, 800); }
       }
