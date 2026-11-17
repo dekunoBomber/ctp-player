@@ -51,9 +51,11 @@
       width: "100%", height: "100%",
       videoId: ids[0] || undefined,
       // loop=0 の時は1回だけ流す（船の PV）。それ以外は並びを繰り返す。
-      playerVars: Object.assign({ playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 }, bg ? { mute: 1, controls: 0, disablekb: 1, iv_load_policy: 3, loop: 0, start: start } : {}),
+      // 背景（bg）は playlist を付けない（付けると start が効かなかった）。繰り返しは、終わった時に自分で start へ戻す
+      playerVars: bg ? { playsinline: 1, rel: 0, mute: 1, controls: 0, disablekb: 1, iv_load_policy: 3, loop: 0, start: start }
+        : { playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 },
       events: {
-        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) p.mute(); p.playVideo(); } },
+        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); } },
         onStateChange: function (e) { if (bg && e.data === 0) { p.seekTo(start, true); p.playVideo(); } var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
         // 埋め込みが許されていない動画などは、知らせてから次へ進む
         onError: function (e) { tell({ ev: "error", info: e.data }); setTimeout(function () { try { p.nextVideo(); } catch (x) {} }, 800); }
