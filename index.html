@@ -51,6 +51,11 @@
   var bg = q.get("bg") === "1";
   // start：流し始める秒。背景では、終わったらこの秒へ戻って繰り返す（頭の字幕を出さない。司令部 11-17）
   var start = Math.max(0, Math.min(36000, parseInt(q.get("start"), 10) || 0));
+  // end：終わる秒（その後は無音の所など。司令部 11-17「この前後は無音なのでカットして」）。無ければ動画の終わり
+  var end = Math.max(0, Math.min(36000, parseInt(q.get("end"), 10) || 0));
+  // 1回りが終わって頭（start）へ戻る時に、CTP に知らせる（PV と RSI の頁の映像を交互に流すため）
+  function cycle() { p_.seekTo(start, true); tell({ ev: "cycle" }); if (!held) p_.playVideo(); }
+  var p_ = null;
   var showT = null;
   if (bg) document.body.classList.add("bg");
   if (q.get("clear") === "1") document.documentElement.classList.add("clear");
@@ -92,7 +97,12 @@
       events: {
         onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); }
           // 背景：終わる 4 秒前から消し始める（最後の絵を見せない）
-          if (bg) setInterval(function () { try { var d = p.getDuration(), t = p.getCurrentTime(); if (d > 0 && d - t < 4 && document.body.classList.contains("show")) { show(false); if (snd.on) soundDown(1500); } } catch (x) {} }, 250);
+          if (bg) { p_ = p; setInterval(function () { try {
+            var d = p.getDuration(), t = p.getCurrentTime(), stop = end > start ? Math.min(end, d || end) : d;
+            // 終わる 4 秒前から消し始め（最後の絵を見せない）、end がある時は end で頭へ戻る
+            if (stop > 0 && stop - t < 4 && document.body.classList.contains("show")) { show(false); if (snd.on) soundDown(1500); }
+            if (end > start && t >= end && !held) cycle();
+          } catch (x) {} }, 250); }
         },
         onStateChange: function (e) {
           if (bg) {
@@ -100,7 +110,7 @@
             // 流れ始めて、始める秒より後にいる時だけ、1秒おいて出す。始まる前・終わった時は消す（読み込み中の一時の待ちでは消さない）
             if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) { show(true); soundUp(); } } catch (x) {} }, 1000);
             else if (e.data === 0 || e.data === -1 || e.data === 5) show(false);
-            if (e.data === 0) { p.seekTo(start, true); p.playVideo(); }
+            if (e.data === 0) cycle();
             // 背景は止めない。音を出した時にブラウザが止めた（押す前の音は許されない）なら、消音に戻して流し続け、CTP に知らせる
             if (e.data === 2 && !held) { if (!p.isMuted()) { clearInterval(snd.timer); snd.cur = 0; p.mute(); tell({ ev: "sndBlocked" }); } p.playVideo(); }
           }
