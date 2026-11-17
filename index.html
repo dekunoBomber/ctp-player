@@ -42,6 +42,8 @@
   var alone = parent === window;
   // bg=1：CTP の空の画面の背景（司令部 11-17）。音を消し、操作の帯を出さず、用意ができたら自分で流して繰り返す
   var bg = q.get("bg") === "1";
+  // start：流し始める秒。背景では、終わったらこの秒へ戻って繰り返す（頭の字幕を出さない。司令部 11-17）
+  var start = Math.max(0, Math.min(36000, parseInt(q.get("start"), 10) || 0));
   if (alone && q.get("title")) document.title = q.get("title");
   var ids = (q.get("ids") || "").split(",").filter(function (x) { return /^[\w-]{11}$/.test(x); });
   window.onYouTubeIframeAPIReady = function () {
@@ -49,10 +51,10 @@
       width: "100%", height: "100%",
       videoId: ids[0] || undefined,
       // loop=0 の時は1回だけ流す（船の PV）。それ以外は並びを繰り返す。
-      playerVars: Object.assign({ playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 }, bg ? { mute: 1, controls: 0, disablekb: 1, iv_load_policy: 3 } : {}),
+      playerVars: Object.assign({ playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 }, bg ? { mute: 1, controls: 0, disablekb: 1, iv_load_policy: 3, loop: 0, start: start } : {}),
       events: {
         onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) p.mute(); p.playVideo(); } },
-        onStateChange: function (e) { var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
+        onStateChange: function (e) { if (bg && e.data === 0) { p.seekTo(start, true); p.playVideo(); } var d = {}; try { d = p.getVideoData() || {}; } catch (x) {} tell({ ev: "state", info: e.data, title: d.title || "", id: d.video_id || "" }); },
         // 埋め込みが許されていない動画などは、知らせてから次へ進む
         onError: function (e) { tell({ ev: "error", info: e.data }); setTimeout(function () { try { p.nextVideo(); } catch (x) {} }, 800); }
       }
