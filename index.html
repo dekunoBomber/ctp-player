@@ -87,14 +87,19 @@
   // 区間だけ流す（司令部 11-17「プラン完成の時だけ背景動画を差し替え」）。背景（bg）の時だけ。
   // seg：{ start, end, fadeIn, fadeOut }（秒）。今の映像をすっと消し、start へ飛んで fadeIn 秒でふわっと出し、
   // end の fadeOut 秒前から消し始めて end で消えきる。終わったら CTP に segEnd を知らせ、いつもの背景（start から）に戻す。
+  // pic:false の時は音だけ（絵は出さない）。YouTube は再生の始めと途中へ飛んだ時に、真ん中の一時停止の印と題を約5秒出して消す。
+  // 8秒の区間ではずっと見えてしまう（司令部 11-19「プレイヤーのポーズＵＩがでちゃってる」→「２かな。背景映像もともと不要だったし」）
   var seg = null;
+  // 途中へ飛んだ後、印が消えるまで絵を出さない時間（11-19 に画面に出さない Chrome で測った。4.5 秒では残り、5 秒で消えた）
+  var UI_MS = 5500;
+  var quietTill = 0; // この時刻までは、流れ始めの知らせ（下の onStateChange）でも絵を出さない
   function num(v, lo, hi, d) { return typeof v === "number" && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
   function fadeMs(sec) { document.getElementById("player").style.transitionDuration = sec + "s"; }
   function segStart(m) {
     if (!bg || !player) return;
     var a = num(m.start, 0, 36000, 0), b = num(m.end, 0, 36000, 0);
     if (!(b > a)) return;
-    seg = { start: a, end: b, inn: num(m.fadeIn, 0, 10, 1.5), out: num(m.fadeOut, 0, 10, 1.5), fading: false };
+    seg = { start: a, end: b, inn: num(m.fadeIn, 0, 10, 1.5), out: num(m.fadeOut, 0, 10, 1.5), fading: false, pic: m.pic !== false };
     clearTimeout(showT);
     fadeMs(0.3); show(false);
     if (snd.on) soundDown(300);
@@ -102,7 +107,7 @@
       if (!seg) return;
       held = false;
       player.seekTo(seg.start, true); player.playVideo();
-      fadeMs(seg.inn); show(true);
+      if (seg.pic) { fadeMs(seg.inn); show(true); }
       if (snd.on) { if (player.isMuted()) { snd.cur = 0; player.setVolume(0); player.unMute(); } fadeTo(snd.vol, seg.inn * 1000); }
     }, 350);
   }
@@ -119,7 +124,9 @@
       tell({ ev: "segEnd" });
       fadeMs(1.5);
       try { player.seekTo(start, true); player.playVideo(); } catch (x) {}
-      showT = setTimeout(function () { show(true); soundUp(); }, 1000);
+      // いつもの背景へ戻る時も途中へ飛ぶので、印が消えてから出す（絵を出していた区間の後は、今までどおり 1 秒）
+      if (!was.pic) quietTill = Date.now() + UI_MS;
+      showT = setTimeout(function () { show(true); soundUp(); }, was.pic ? 1000 : UI_MS);
     }, out * 1000 + 50);
     return was;
   }
@@ -152,7 +159,7 @@
           else if (bg) {
             clearTimeout(showT);
             // 流れ始めて、始める秒より後にいる時だけ、1秒おいて出す。始まる前・終わった時は消す（読み込み中の一時の待ちでは消さない）
-            if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) { show(true); soundUp(); } } catch (x) {} }, 1000);
+            if (e.data === 1) showT = setTimeout(function () { try { if (p.getCurrentTime() >= start - 0.5) { show(true); soundUp(); } } catch (x) {} }, Math.max(1000, quietTill - Date.now()));
             else if (e.data === 0 || e.data === -1 || e.data === 5) show(false);
             if (e.data === 0) cycle();
             // 背景は止めない。音を出した時にブラウザが止めた（押す前の音は許されない）なら、消音に戻して流し続け、CTP に知らせる
