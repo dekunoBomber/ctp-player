@@ -8,7 +8,7 @@
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   #player { width: 100%; height: 100%; }
-  /* 背景（bg）：真っ暗から1秒おいてふわっと出す。終わる前にふっと消す（最後のロゴの絵が一瞬出て驚く。司令部 11-17） */
+  /* 背景（bg）：真っ暗から1秒おいてふわっと出す。終わる前にふっと消す（最後のロゴの絵が一瞬出て驚く。司令部 11-17）。11-19 から、流れ始め・頭へ戻った時は、YouTube の一時停止の印が消える 5.5 秒後に出す（quietTill） */
   body.bg #player { opacity: 0; transition: opacity 1.5s ease; }
   body.bg.show #player { opacity: 1; }
   /* clear=1：後ろの物（CTP の扉の写真）が見えるように、地を透明にする */
@@ -30,8 +30,10 @@
   function tell(msg) { if (!fromExt) return; try { parent.postMessage(Object.assign({ ctp: 1 }, msg), host); } catch (e) {} }
   function run(m) {
     if (!player) { pending.push(m); return; }
-    if (m.cmd === "play") { held = false; player.playVideo(); }
-    else if (m.cmd === "pause") { held = true; player.pauseVideo(); }
+    // 背景を止めるのは、CTP のタブが隠れた時だけ。止めた所から流し直すと YouTube が一時停止の印を約5秒出すので、
+    // 止める時に絵を消しておき、流し直した後は印が消えてから出す（11-19、quietTill）
+    if (m.cmd === "play") { if (bg && held) quietTill = Date.now() + UI_MS; held = false; player.playVideo(); }
+    else if (m.cmd === "pause") { held = true; if (bg) { clearTimeout(showT); show(false); } player.pauseVideo(); }
     else if (m.cmd === "next") player.nextVideo();
     else if (m.cmd === "volume" && typeof m.vol === "number" && isFinite(m.vol)) player.setVolume(Math.max(0, Math.min(100, m.vol)));
     else if (m.cmd === "sound") soundSet(!!m.on, m.vol);
@@ -56,7 +58,8 @@
   // end：終わる秒（その後は無音の所など。司令部 11-17「この前後は無音なのでカットして」）。無ければ動画の終わり
   var end = Math.max(0, Math.min(36000, parseInt(q.get("end"), 10) || 0));
   // 1回りが終わって頭（start）へ戻る時に、CTP に知らせる（PV と RSI の頁の映像を交互に流すため）
-  function cycle() { p_.seekTo(start, true); tell({ ev: "cycle" }); if (!held) p_.playVideo(); }
+  // 頭へ戻る時も途中へ飛ぶので、一時停止の印（約5秒）が消えてから出す（11-19、下の quietTill）
+  function cycle() { quietTill = Date.now() + UI_MS; p_.seekTo(start, true); tell({ ev: "cycle" }); if (!held) p_.playVideo(); }
   var p_ = null;
   var showT = null;
   if (bg) document.body.classList.add("bg");
@@ -143,7 +146,7 @@
       playerVars: bg ? { playsinline: 1, rel: 0, mute: 1, controls: 0, disablekb: 1, iv_load_policy: 3, loop: 0, start: start }
         : { playsinline: 1, loop: new URLSearchParams(location.search).get("loop") === "0" ? 0 : 1, playlist: ids.join(","), rel: 0 },
       events: {
-        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); }
+        onReady: function () { player = p; tell({ ev: "ready" }); pending.splice(0).forEach(run); if (alone || bg) { if (bg) { quietTill = Date.now() + UI_MS; p.mute(); if (start) p.seekTo(start, true); } p.playVideo(); }
           // 背景：終わる 4 秒前から消し始める（最後の絵を見せない）
           if (bg) { p_ = p; setInterval(function () { try {
             var d = p.getDuration(), t = p.getCurrentTime(), stop = end > start ? Math.min(end, d || end) : d;
